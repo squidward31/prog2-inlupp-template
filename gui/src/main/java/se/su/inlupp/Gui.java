@@ -29,6 +29,10 @@ import javafx.scene.shape.Line;
 import javafx.util.Pair;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.Set;
+import java.util.HashSet;
 
 class PlaceNode extends StackPane {
   private final String name;
@@ -84,6 +88,7 @@ public class Gui extends Application {
   private boolean hasUnsavedChanges = false;
   private String currentMapImagePath = null;
   private static List<PlaceNode> selectedNodes = new ArrayList<>();
+  private Map<String,PlaceNode> placeNodeMap = new HashMap<>();
 
   @Override
   public void start(Stage stage) {
@@ -173,6 +178,7 @@ public class Gui extends Application {
     PlaceNode node = new PlaceNode(name, x, y);
     mapPane.getChildren().add(node);
     graph.add(name);
+    placeNodeMap.put(name, node);
   }
 
   public static void onPlaceNodeSelected(PlaceNode node) {
@@ -467,7 +473,21 @@ public class Gui extends Application {
       try {
         // Rensa gamla noder/graf
         graph = new ListGraph<>();
-
+        placeNodeMap.clear();
+        mapPane.getChildren().clear();
+        mapPane.getChildren().add(mapView);
+        try (Scanner scanner = new Scanner(file, "UTF-8")) {
+          
+        }
+        hasUnsavedChanges = false;
+        System.out.println("Graf-fil öppnad: " + file.getName());
+      } 
+      catch (Exception ex) {
+        showAlert("Fel", "Kunde inte öppna graf-filen: " + ex.getMessage());
+        ex.printStackTrace();
+      }
+    }
+  }
         try (java.util.Scanner scanner = new java.util.Scanner(file, "UTF-8")) {
           // Läs första raden - sökväg till bildfil
           if (!scanner.hasNextLine()) {
@@ -520,60 +540,41 @@ public class Gui extends Application {
           currentMapImagePath = imageFile.getAbsolutePath();
 
           // Läs noder och edges
+         if (!scanner.hasNextLine()) throw new Exception("Missing nodes line");
+          String nodesLine = scanner.nextLine();
+          String[] parts = nodesLine.split(";");
+          for (int i = 0; i < parts.length; i += 3) {
+            String name = parts[i];
+            double x    = Double.parseDouble(parts[i+1]);
+            double y    = Double.parseDouble(parts[i+2]);
+            addVisualNode(name, x, y);   
+          }
+          
+          // Läs ut kanter utan dubbletter
+          Set<String> seen = new HashSet<>();
           while (scanner.hasNextLine()) {
-            String line = scanner.nextLine().trim();
-            if (line.isEmpty())
-              continue;
-
-            if (line.startsWith("Node:")) {
-              // Format: Node: namn;x;y
-              String nodeData = line.substring(5).trim();
-              String[] parts = nodeData.split(";");
-              if (parts.length != 3) {
-                throw new Exception("Felaktigt nodformat: " + line);
-              }
-
-              String nodeName = parts[0];
-              double x = Double.parseDouble(parts[1]);
-              double y = Double.parseDouble(parts[2]);
-
-              // Lägg till nod i grafen
-              graph.add(nodeName);
-
-              // TODO: Skapa visuell representation av noden
-              // addVisualNode(nodeName, x, y);
-
-            } else if (line.startsWith("Edge:")) {
-              // Format: Edge: från;till;namn;vikt
-              String edgeData = line.substring(5).trim();
-              String[] parts = edgeData.split(";");
-              if (parts.length != 4) {
-                throw new Exception("Felaktigt edge-format: " + line);
-              }
-
-              String from = parts[0];
-              String to = parts[1];
-              String name = parts[2];
-              int weight = Integer.parseInt(parts[3]);
-
-              // Lägg till edge i grafen
-              graph.connect(from, to, name, weight);
-
-              // TODO: Skapa visuell representation av edge
-              // addVisualEdge(from, to, name, weight);
+            String[] p   = scanner.nextLine().split(";");
+            String from  = p[0], to = p[1], conn = p[2];
+            int time     = Integer.parseInt(p[3]);
+            String key   = from + "→" + to, rev = to + "→" + from;
+            if (!seen.contains(key) && !seen.contains(rev)) {
+              graph.connect(from, to, conn, time);
+              drawEdge(placeNodeMap.get(from), placeNodeMap.get(to));
+              seen.add(key);
             }
           }
-        }
-
+        }   
+          
         hasUnsavedChanges = false;
         System.out.println("Graf-fil öppnad: " + file.getName());
-
-      } catch (Exception ex) {
-        showAlert("Fel", "Kunde inte öppna graf-filen: " + ex.getMessage());
-        ex.printStackTrace();
-      }
+  }
+  catch (Exception ex) {
+      showAlert("Fel", "Kunde inte öppna graf-filen: " + ex.getMessage());
+      ex.printStackTrace();
     }
   }
+}
+
 
   private void handleSaveItem() {
     // Kontrollera att det finns en karta att spara
@@ -600,34 +601,30 @@ public class Gui extends Application {
           writer.println(currentMapImagePath);
 
           // 2. Andra raden: alla noder (semikolonseparerade)
-          StringBuilder nodesLine = new StringBuilder();
-          boolean firstNode = true;
-          for (String nodeName : graph.getNodes()) {
-            if (!firstNode) {
-              nodesLine.append(";");
-            }
-
-            // TODO: Hämta faktiska koordinater från visuella noder
-            // För nu används dummy-koordinater
-            double x = 0.0; // Ska hämtas från PlaceNode
-            double y = 0.0; // Ska hämtas från PlaceNode
-
-            nodesLine.append(nodeName).append(";").append(x).append(";").append(y);
-            firstNode = false;
+         StringBuilder nodesLine = new StringBuilder();
+          boolean first = true;
+          for (Map.Entry<String,PlaceNode> e : placeNodeMap.entrySet()) {
+            if (!first) nodesLine.append(";");
+            String name = e.getKey();
+            PlaceNode nd = e.getValue();
+            double x = nd.getCenterX(), y = nd.getCenterY();
+            nodesLine.append(name).append(";").append(x).append(";").append(y);
+            first = false;
           }
           writer.println(nodesLine.toString());
 
           // 3. Resterande rader: alla förbindelser (en per rad)
-          for (String fromNode : graph.getNodes()) {
-            for (Edge<String> edge : graph.getEdgesFrom(fromNode)) {
-              String toNode = edge.getDestination();
-              String edgeName = edge.getName();
-              int weight = edge.getWeight();
-
-              writer.println(fromNode + ";" + toNode + ";" + edgeName + ";" + weight);
-            }
-          }
-        }
+          Set<String> seen = new HashSet<>();
+          for (String from : graph.getNodes()) {
+            for (Edge<String> edge : graph.getEdgesFrom(from)) {
+              String to  = edge.getDestination();
+              String key = from + "→" + to, rev = to + "→" + from;
+              if (!seen.contains(key) && !seen.contains(rev)) {
+                writer.println(from + ";" + to + ";" + edge.getName() + ";" + edge.getWeight());
+                seen.add(key);
+    }
+  }
+}
 
         hasUnsavedChanges = false;
         System.out.println("Graf sparad: " + file.getName());
