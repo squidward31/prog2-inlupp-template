@@ -9,6 +9,7 @@ import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.*;
+import javafx.scene.control.Tooltip;
 import javafx.stage.FileChooser;
 import java.io.PrintWriter;
 import java.io.FileWriter;
@@ -38,8 +39,8 @@ class PlaceNode extends StackPane {
     this.name = name;
     this.circle = new Circle(8, Color.LIGHTBLUE);
     this.circle.setStroke(Color.BLACK);
-    this.label = new Label(name);
-    getChildren().addAll(circle, label);
+    Tooltip.install(this, new Tooltip(name));
+    getChildren().addAll(circle);
     setLayoutX(x - circle.getRadius());
     setLayoutY(y - circle.getRadius());
     setOnMouseClicked(this::handleClick);
@@ -51,6 +52,7 @@ class PlaceNode extends StackPane {
   }
 
   public void toggleSelected() {
+    if (!selected && Gui.selectedNodes.size() >= 2) return;
     selected = !selected;
     circle.setFill(selected ? Color.RED : Color.LIGHTBLUE);
     Gui.onPlaceNodeSelected(this);
@@ -137,7 +139,10 @@ public class Gui extends Application {
     saveImageItem.setOnAction(e -> handleSaveImageItem());
 
     // verktygsknappar handlers
-    newPlaceBtn.setOnAction(e -> activateNewPlaceMode());
+    newPlaceBtn.setOnAction(e -> {
+      newPlaceBtn.setDisable(true); 
+      activateNewPlaceMode(() -> newPlaceBtn.setDisable(false));
+      });
     newConnBtn.setOnAction(e -> handleNewConnection());
     showConnBtn.setOnAction(e -> handleShowConnection());
     changeConnBtn.setOnAction(e -> handleChangeConnection());
@@ -151,7 +156,7 @@ public class Gui extends Application {
   }
 
   // new place
-  private void activateNewPlaceMode() {
+  private void activateNewPlaceMode(Runnable onFinished) {
     mapPane.setCursor(Cursor.CROSSHAIR);
     mapPane.setOnMouseClicked(evt -> {
       double x = evt.getX();
@@ -167,6 +172,7 @@ public class Gui extends Application {
       });
       mapPane.setCursor(Cursor.DEFAULT);
       mapPane.setOnMouseClicked(null);
+      onFinished.run();
     });
   }
 
@@ -202,11 +208,11 @@ public class Gui extends Application {
     Dialog<Pair<String, Integer>> dialog = new Dialog<>();
     dialog.setTitle("New Connection");
     GridPane grid = new GridPane();
-    TextField nameField = new TextField(), weightField = new TextField();
-    grid.add(new Label("Namn:"), 0, 0);
+    TextField nameField = new TextField(), timeField = new TextField();
+    grid.add(new Label("Name:"), 0, 0);
     grid.add(nameField, 1, 0);
-    grid.add(new Label("Vikt:"), 0, 1);
-    grid.add(weightField, 1, 1);
+    grid.add(new Label("Time:"), 0, 1);
+    grid.add(timeField, 1, 1);
     dialog.getDialogPane().setContent(grid);
     dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
     dialog.setResultConverter(btn -> {
