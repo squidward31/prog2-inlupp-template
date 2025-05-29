@@ -20,15 +20,66 @@ import javafx.scene.image.WritableImage;
 import javafx.embed.swing.SwingFXUtils;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
+////////////////// Nödvändiga? ///////////////////////
+//// import javafx.scene.layout.StackPane;
+//// import javafx.scene.shape.Circle;
+//// import javafx.scene.paint.Color;
+//// import javafx.scene.control.Label;
+//// import javafx.scene.input.MouseEvent;
+//// import javafx.scene.shape.Line;
+//// import javafx.util.Pair;
+//// import java.util.List;
+//// import java.util.ArrayList;
+///////////////////////////////////////////////////////
+
+
+////////// NY ///////////////
+class PlaceNode extends StackPane {
+  private final String name;
+  private final Circle circle;
+  private Lfinal abel label;
+  private boolean selected = false;
+  
+}
+  public PlaceNode(String name, double x, double y) {
+    this.name = name;
+    this.circle = new Circle(8, Color.LIGHTBLUE);
+    this.circle.setStroke(Color.BLACK);
+    this.label = new Label(name);
+    getCHildren().addAll(circle, label);
+    setLayoutX(x - circle.getRadius());
+    setLayoutY(y - circle.getRadius());
+    setOnMouseClicked(this::handleClick);
+  } 
+
+ private void handleClick(MouseEvent event) {
+        toggleSelected();
+        event.consume();
+    }
+
+    public void toggleSelected() {
+        selected = !selected;
+        circle.setFill(selected ? Color.RED : Color.LIGHTBLUE);
+        Gui.onPlaceNodeSelected(this);
+    }
+
+    public boolean isSelected() { return selected; }
+    public String getName() { return name; }
+    public double getCenterX() { return getLayoutX() + circle.getRadius(); }
+    public double getCenterY() { return getLayoutY() + circle.getRadius(); }
+}
+////////////////////////////////////////////////////////////////////////////
 
 public class Gui extends Application {
-
   private Graph<String> graph = new ListGraph<>();
   private ImageView mapView;
   private Pane mapPane;
   private Stage primaryStage;
   private boolean hasUnsavedChanges = false;
   private String currentMapImagePath = null;
+///////////////// NY //////////////
+  private static List<PlaceNode> selectedNodes = new ArrayList<>();
+///////////////////////////////////////////////////  
 
   @Override
   public void start(Stage stage) {
@@ -54,7 +105,14 @@ public class Gui extends Application {
         new Button("New Place"),
         new Button("New Connection"),
         new Button("Change Connection"));
-
+/////////// NY /////////////////////////////////////////////
+       // Button findPathBtn      = new Button("Find Path");
+       // Button showConnBtn      = new Button("Show Connection");
+       // Button newPlaceBtn      = new Button("New Place");
+      //  Button newConnBtn       = new Button("New Connection");
+      //  Button changeConnBtn    = new Button("Change Connection");
+      //  ToolBar toolBar = new ToolBar(findPathBtn, showConnBtn, newPlaceBtn, newConnBtn, changeConnBtn);
+/////////////////////////////////////////////////////////////////
     // Kartområde
     mapView = new ImageView();
     mapPane = new Pane(mapView);
@@ -76,6 +134,130 @@ public class Gui extends Application {
     saveItem.setOnAction(e -> handleSaveItem());
     saveImageItem.setOnAction(e -> handleSaveImageItem());
 
+    /////////////// NY //////////////
+    // verktygsknappar handlers
+    newPlaceBtn.setOnAction(e -> activateNewPlaceMode());
+        newConnBtn.setOnAction(e -> handleNewConnection());
+        showConnBtn.setOnAction(e -> handleShowConnection());
+        changeConnBtn.setOnAction(e -> handleChangeConnection());
+        findPathBtn.setOnAction(e -> handleFindPath());
+///////////////////////////////////////////////////////////
+
+    ///////////////////// NY PLACE ///////////////////////
+     private void activateNewPlaceMode() {
+        mapPane.setCursor(Cursor.CROSSHAIR);
+        mapPane.setOnMouseClicked(evt -> {
+            double x = evt.getX();
+            double y = evt.getY();
+            TextInputDialog dialog = new TextInputDialog();
+            dialog.setTitle("New Place");
+            dialog.setHeaderText(null);
+            dialog.setContentText("Ange namn på plats:");
+            Optional<String> result = dialog.showAndWait();
+            result.ifPresent(name -> {
+                addVisualNode(name.trim(), x, y);
+                markUnsavedChanges();
+            });
+            mapPane.setCursor(Cursor.DEFAULT);
+            mapPane.setOnMouseClicked(null);
+        });
+    }
+
+        private void addVisualNode(String name, double x, double y) {
+        PlaceNode node = new PlaceNode(name, x, y);
+        mapPane.getChildren().add(node);
+        graph.add(name);
+    }
+
+    public static void onPlaceNodeSelected(PlaceNode node) {
+        if (node.isSelected()) {
+            selectedNodes.add(node);
+            if (selectedNodes.size() > 2) {
+                PlaceNode old = selectedNodes.remove(0);
+                old.toggleSelected();
+            }
+        } else {
+            selectedNodes.remove(node);
+        }
+    }
+
+////////////////////////////////////////////////////////
+
+///////////////// NY Connection /////////////////  
+private void handleNewConnection() {
+        if (selectedNodes.size() != 2) { showAlert("Fel", "Välj exakt två platser för att skapa en förbindelse."); return; }
+        PlaceNode a = selectedNodes.get(0), b = selectedNodes.get(1);
+        if (graph.getEdgeBetween(a.getName(), b.getName()) != null) { showAlert("Fel", "En förbindelse finns redan."); return; }
+        Dialog<Pair<String,Integer>> dialog = new Dialog<>(); dialog.setTitle("New Connection");
+        GridPane grid = new GridPane(); TextField nameField = new TextField(), weightField = new TextField();
+        grid.add(new Label("Namn:"),0,0); grid.add(nameField,1,0); grid.add(new Label("Vikt:"),0,1); grid.add(weightField,1,1);
+        dialog.getDialogPane().setContent(grid); dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        dialog.setResultConverter(btn -> {
+            if (btn == ButtonType.OK) {
+                try { return new Pair<>(nameField.getText(), Integer.parseInt(weightField.getText())); }
+                catch (Exception ex) { return null; }
+            }
+            return null;
+        });
+        dialog.showAndWait().ifPresent(p -> {
+            graph.connect(a.getName(), b.getName(), p.getKey(), p.getValue());
+            drawEdge(a, b); markUnsavedChanges();
+        });
+    }
+    private void drawEdge(PlaceNode a, PlaceNode b) {
+        Line line = new Line(a.getCenterX(), a.getCenterY(), b.getCenterX(), b.getCenterY());
+        line.setStrokeWidth(2); mapPane.getChildren().add(line);
+    }
+//////////////////////////////////////////////////////////////////////////////////////////
+
+  //////////////////////// NY Show connection ////////////////////////////////////////////
+   private void handleShowConnection() {
+        if (selectedNodes.size() != 2) { showAlert("Fel", "Välj exakt två platser för att visa förbindelse."); return; }
+        PlaceNode a = selectedNodes.get(0), b = selectedNodes.get(1);
+        Edge<String> edge = graph.getEdgeBetween(a.getName(), b.getName());
+        if (edge == null) showAlert("Fel", "Ingen förbindelse finns.");
+        else showAlert("Connection", edge.getName() + ", vikt=" + edge.getWeight());
+  ////////////////////////////////////////////////////////////////////////////////////////////
+
+     ///////////////////////////////// NY change connection /////////////////////////////////
+    private void handleChangeConnection() {
+        if (selectedNodes.size() != 2) { showAlert("Fel", "Välj exakt två platser för att ändra förbindelse."); return; }
+        PlaceNode a = selectedNodes.get(0), b = selectedNodes.get(1);
+        Edge<String> edge = graph.getEdgeBetween(a.getName(), b.getName()); if (edge == null) { showAlert("Fel", "Ingen förbindelse finns."); return; }
+        TextInputDialog dialog = new TextInputDialog(String.valueOf(edge.getWeight())); dialog.setTitle("Change Connection");
+        dialog.setHeaderText(null); dialog.setContentText("Ny vikt:");
+        dialog.showAndWait().ifPresent(val -> {
+            try {
+                int newW = Integer.parseInt(val);
+                graph.setConnectionWeight(a.getName(), b.getName(), newW);
+                showAlert("Success", "Vikten uppdaterad till " + newW);
+                markUnsavedChanges();
+            } catch (NumberFormatException ex) {
+                showAlert("Fel", "Ogiltigt viktvärde.");
+            }
+        });
+    }
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+     ////////////////////// NY find path ////////////////////////////////////////////
+    private void handleFindPath() {
+        if (selectedNodes.size() != 2) { showAlert("Fel", "Välj exakt två platser för att hitta väg."); return; }
+        PlaceNode a = selectedNodes.get(0), b = selectedNodes.get(1);
+        if (!graph.pathExists(a.getName(), b.getName())) { showAlert("Fel", "Ingen väg finns."); return; }
+        List<Edge<String>> path = graph.getPath(a.getName(), b.getName());
+        StringBuilder sb = new StringBuilder(); int total = 0;
+        for (Edge<String> e : path) {
+            sb.append("Till ").append(e.getDestination()).append(" via ")
+              .append(e.getName()).append(" vikt ").append(e.getWeight()).append("\n");
+            total += e.getWeight();
+        }
+        sb.append("Total vikt: ").append(total);
+        showAlert("Path", sb.toString());
+    }
+/////////////////////////////////////////////////////////////////////////////////////////////////////
+     
+    
+    
     // Hantera fönsterstängning
     stage.setOnCloseRequest(e -> {
       e.consume();
